@@ -70,6 +70,7 @@ impl LeaderTrackerImpl {
                         cur_slot.store(start_slot, Ordering::Relaxed);
                     }
                 }
+                sleep(Duration::from_millis(400)).await;
             }
         });
     }
