@@ -13,6 +13,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, UdpSocket},
     path::PathBuf,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{anyhow, Error};
@@ -21,12 +22,15 @@ use cadence_macros::set_global_default;
 use figment::{providers::Env, Figment};
 use grpc_geyser::GrpcGeyserImpl;
 use jsonrpsee::server::{middleware::ProxyGetRequestLayer, ServerBuilder};
-use leader_tracker::LeaderTrackerImpl;
+use leader_tracker::{LeaderTracker, LeaderTrackerImpl};
 use rpc_server::{AtlasTxnSenderImpl, AtlasTxnSenderServer};
 use serde::Deserialize;
-use solana_client::{connection_cache::ConnectionCache, rpc_client::RpcClient};
+use solana_client::{
+    connection_cache::ConnectionCache, nonblocking::tpu_connection::TpuConnection,
+    rpc_client::RpcClient,
+};
 use solana_sdk::signature::{read_keypair_file, Keypair};
-use tokio::sync::RwLock;
+use tokio::{spawn, sync::RwLock, time::sleep};
 use tracing::{error, info};
 use transaction_store::TransactionStoreImpl;
 use txn_sender::TxnSenderImpl;
@@ -131,6 +135,8 @@ async fn main() -> anyhow::Result<()> {
         leader_offset,
     ));
     let txn_send_retry_interval_seconds = env.txn_send_retry_interval.unwrap_or(2);
+    let leader_tracker_ = leader_tracker.clone();
+    let connection_cache_ = connection_cache.clone();
     let txn_sender = Arc::new(TxnSenderImpl::new(
         leader_tracker,
         transaction_store.clone(),
@@ -140,6 +146,23 @@ async fn main() -> anyhow::Result<()> {
         txn_send_retry_interval_seconds,
         env.max_retry_queue_size,
     ));
+
+    spawn(async move {
+        loop {
+            let leaders = leader_tracker_.get_leaders();
+            for addr in leaders {
+                info!("warm up {}", addr.pubkey);
+                let Some(addr) = addr.tpu_quic else {
+                    continue;
+                };
+                let conn = connection_cache_.get_nonblocking_connection(&addr);
+                spawn(async move {
+                    let _ = conn.send_data(&[0]).await;
+                });
+            }
+            sleep(Duration::from_millis(400)).await;
+        }
+    });
     let max_txn_send_retries = env.max_txn_send_retries.unwrap_or(5);
     let atlas_txn_sender =
         AtlasTxnSenderImpl::new(txn_sender, transaction_store, max_txn_send_retries);
