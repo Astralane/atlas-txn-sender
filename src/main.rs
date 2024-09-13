@@ -11,9 +11,11 @@ mod vendor;
 use std::{
     env,
     net::{IpAddr, Ipv4Addr, UdpSocket},
+    path::PathBuf,
     sync::Arc,
 };
 
+use anyhow::{anyhow, Error};
 use cadence::{BufferedUdpMetricSink, QueuingMetricSink, StatsdClient};
 use cadence_macros::set_global_default;
 use figment::{providers::Env, Figment};
@@ -55,6 +57,15 @@ use tikv_jemallocator::Jemalloc;
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+pub fn load_keypair(src: &str) -> Result<Keypair, Error> {
+    let Ok(decoded) = bs58::decode(src).into_vec() else {
+        let path = shellexpand::full(&src).map_err(|e| anyhow!(e))?;
+        let path = PathBuf::from(&*path).canonicalize()?;
+        return Ok(read_keypair_file(&path).map_err(|_| anyhow!("Cannot read keypair"))?);
+    };
+    Ok(Keypair::from_bytes(&decoded).map_err(|_| anyhow!("Cannot read pubkey"))?)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Init metrics/logging
@@ -86,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     let connection_cache;
     if let Some(identity_keypair_file) = env.identity_keypair_file.clone() {
         let identity_keypair =
-            read_keypair_file(identity_keypair_file).expect("keypair file must exist");
+            load_keypair(&identity_keypair_file).expect("keypair file must exist");
         connection_cache = Arc::new(ConnectionCache::new_with_client_options(
             "atlas-txn-sender",
             tpu_connection_pool_size,

@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bs58 = "0.4"
+shellexpand = "3"
 jsonrpsee = { version = "0.20.1", features = [
   "server",
   "http-client",
