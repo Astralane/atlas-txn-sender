@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use solana_client::nonblocking::rpc_client::RpcClient;
 use tokio::{
     runtime::{Builder, Runtime},
     time::{error::Elapsed, sleep, timeout},
@@ -43,6 +44,7 @@ pub struct TxnSenderImpl {
     txn_sender_runtime: Arc<Runtime>,
     txn_send_retry_interval_seconds: usize,
     max_retry_queue_size: Option<usize>,
+    friendly_rpcs: Vec<Arc<RpcClient>>,
 }
 
 impl TxnSenderImpl {
@@ -54,12 +56,22 @@ impl TxnSenderImpl {
         txn_sender_threads: usize,
         txn_send_retry_interval_seconds: usize,
         max_retry_queue_size: Option<usize>,
+        friendly_rpc_urls: Option<Vec<String>>,
     ) -> Self {
         let txn_sender_runtime = Builder::new_multi_thread()
             .worker_threads(txn_sender_threads)
             .enable_all()
             .build()
             .unwrap();
+
+        let friendly_rpcs = friendly_rpc_urls
+            .unwrap_or_default()
+            .iter()
+            .map(|url| {
+                Arc::new(RpcClient::new(url.clone()))
+            })
+            .collect();
+
         let txn_sender = Self {
             leader_tracker,
             transaction_store,
@@ -68,9 +80,25 @@ impl TxnSenderImpl {
             txn_sender_runtime: Arc::new(txn_sender_runtime),
             txn_send_retry_interval_seconds,
             max_retry_queue_size,
+            friendly_rpcs,
         };
         txn_sender.retry_transactions();
         txn_sender
+    }
+
+    fn forward_to_friendly_rpcs(&self, transaction: &VersionedTransaction) {
+        let friendly_rpc = self.friendly_rpcs.clone();
+        for rpc in friendly_rpc.iter() {
+            let rpc = rpc.clone();
+            let tx = transaction.clone();
+            self.txn_sender_runtime.spawn(async move {
+                let res = rpc.send_transaction(&tx).await;
+                if let Err(e) = res {
+                    error!("Failed to send transaction to friendly rpc: {} for url {}",
+                        e, rpc.url());
+                }
+            });
+        }
     }
 
     fn retry_transactions(&self) {
@@ -132,35 +160,35 @@ impl TxnSenderImpl {
                         let leader = Arc::new(leader.clone());
                         let wire_transaction = wire_transaction.clone();
                         txn_sender_runtime.spawn(async move {
-                        // retry unless its a timeout
-                        for i in 0..SEND_TXN_RETRIES {
-                            let conn = connection_cache
-                                .get_nonblocking_connection(&leader.tpu_quic.unwrap());
-                            if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA_BATCH, conn.send_data(&wire_transaction)).await {
-                                if let Err(e) = result {
-                                    if i == SEND_TXN_RETRIES-1 {
-                                        error!(
+                            // retry unless its a timeout
+                            for i in 0..SEND_TXN_RETRIES {
+                                let conn = connection_cache
+                                    .get_nonblocking_connection(&leader.tpu_quic.unwrap());
+                                if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA_BATCH, conn.send_data(&wire_transaction)).await {
+                                    if let Err(e) = result {
+                                        if i == SEND_TXN_RETRIES - 1 {
+                                            error!(
                                             retry = "true",
                                             "Failed to send transaction batch to {:?}: {}",
                                             leader, e
                                         );
-                                        statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "true");
+                                            statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "true");
+                                        } else {
+                                            statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "false");
+                                        }
                                     } else {
-                                        statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "false");
-                                    }
-                                } else {
-                                    let leader_num_str = leader_num.to_string();
-                                    statsd_time!(
+                                        let leader_num_str = leader_num.to_string();
+                                        statsd_time!(
                                         "transaction_received_by_leader",
                                         sent_at.elapsed(), "leader_num" => &leader_num_str, "api_key" => "not_applicable", "retry" => "true");
-                                    return;
+                                        return;
+                                    }
+                                } else {
+                                    // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
+                                    statsd_count!("transaction_send_timeout", 1);
                                 }
-                            } else {
-                                // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
-                                statsd_count!("transaction_send_timeout", 1);
                             }
-                        }
-                    });
+                        });
                         leader_num += 1;
                     }
                 }
@@ -280,6 +308,8 @@ pub fn compute_priority_details(transaction: &VersionedTransaction) -> PriorityD
 impl TxnSender for TxnSenderImpl {
     fn send_transaction(&self, transaction_data: TransactionData) {
         self.track_transaction(&transaction_data);
+        // Forward the transaction to friendly RPCs for redundancy
+        self.forward_to_friendly_rpcs(&transaction_data.versioned_transaction);
         let api_key = transaction_data
             .request_metadata
             .map(|m| m.api_key)
@@ -298,17 +328,17 @@ impl TxnSender for TxnSenderImpl {
                     let conn =
                         connection_cache.get_nonblocking_connection(&leader.tpu_quic.unwrap());
                     if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA, conn.send_data(&wire_transaction)).await {
-                            if let Err(e) = result {
-                                if i == SEND_TXN_RETRIES-1 {
-                                    error!(
+                        if let Err(e) = result {
+                            if i == SEND_TXN_RETRIES - 1 {
+                                error!(
                                         retry = "false",
                                         "Failed to send transaction to {:?}: {}",
                                         leader, e
                                     );
-                                    statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "true");
-                                } else {
-                                    statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "false");
-                                }
+                                statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "true");
+                            } else {
+                                statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "false");
+                            }
                         } else {
                             let leader_num_str = leader_num.to_string();
                             statsd_time!(

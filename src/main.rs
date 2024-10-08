@@ -50,6 +50,7 @@ struct AtlasTxnSenderEnv {
     max_txn_send_retries: Option<usize>,
     txn_send_retry_interval: Option<usize>,
     max_retry_queue_size: Option<usize>,
+    friendly_rpcs: Option<Vec<String>>,
 }
 
 // Defualt on RPC is 4
@@ -145,6 +146,7 @@ async fn main() -> anyhow::Result<()> {
         env.txn_sender_threads.unwrap_or(4),
         txn_send_retry_interval_seconds,
         env.max_retry_queue_size,
+        env.friendly_rpcs
     ));
 
     spawn(async move {
