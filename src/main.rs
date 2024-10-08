@@ -149,22 +149,22 @@ async fn main() -> anyhow::Result<()> {
         env.friendly_rpcs
     ));
 
-    spawn(async move {
-        loop {
-            let leaders = leader_tracker_.get_leaders();
-            for addr in leaders {
-                info!("warm up {}", addr.pubkey);
-                let Some(addr) = addr.tpu_quic else {
-                    continue;
-                };
-                let conn = connection_cache_.get_nonblocking_connection(&addr);
-                spawn(async move {
-                    let _ = conn.send_data(&[0]).await;
-                });
-            }
-            sleep(Duration::from_millis(400)).await;
-        }
-    });
+    // spawn(async move {
+    //     loop {
+    //         let leaders = leader_tracker_.get_leaders();
+    //         for addr in leaders {
+    //             info!("warm up {}", addr.pubkey);
+    //             let Some(addr) = addr.tpu_quic else {
+    //                 continue;
+    //             };
+    //             let conn = connection_cache_.get_nonblocking_connection(&addr);
+    //             spawn(async move {
+    //                 let _ = conn.send_data(&[0]).await;
+    //             });
+    //         }
+    //         sleep(Duration::from_millis(400)).await;
+    //     }
+    // });
     let max_txn_send_retries = env.max_txn_send_retries.unwrap_or(5);
     let atlas_txn_sender =
         AtlasTxnSenderImpl::new(txn_sender, transaction_store, max_txn_send_retries);
