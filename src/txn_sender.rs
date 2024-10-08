@@ -92,6 +92,8 @@ impl TxnSenderImpl {
             let rpc = rpc.clone();
             let tx = transaction.clone();
             self.txn_sender_runtime.spawn(async move {
+                statsd_count!("transaction_forwarded", 1);
+                info!("Forwarding transaction to friendly rpc: {}", rpc.url());
                 let res = rpc.send_transaction(&tx).await;
                 if let Err(e) = res {
                     error!("Failed to send transaction to friendly rpc: {} for url {}",
