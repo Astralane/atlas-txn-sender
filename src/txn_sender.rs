@@ -312,50 +312,50 @@ impl TxnSender for TxnSenderImpl {
         self.track_transaction(&transaction_data);
         // Forward the transaction to friendly RPCs for redundancy
         self.forward_to_friendly_rpcs(&transaction_data.versioned_transaction);
-        let api_key = transaction_data
-            .request_metadata
-            .map(|m| m.api_key)
-            .unwrap_or("none".to_string());
-        let mut leader_num = 0;
-        for leader in self.leader_tracker.get_leaders() {
-            if leader.tpu_quic.is_none() {
-                error!("leader {:?} has no tpu_quic", leader);
-                continue;
-            }
-            let connection_cache = self.connection_cache.clone();
-            let wire_transaction = transaction_data.wire_transaction.clone();
-            let api_key = api_key.clone();
-            self.txn_sender_runtime.spawn(async move {
-                for i in 0..SEND_TXN_RETRIES {
-                    let conn =
-                        connection_cache.get_nonblocking_connection(&leader.tpu_quic.unwrap());
-                    if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA, conn.send_data(&wire_transaction)).await {
-                        if let Err(e) = result {
-                            if i == SEND_TXN_RETRIES - 1 {
-                                error!(
-                                        retry = "false",
-                                        "Failed to send transaction to {:?}: {}",
-                                        leader, e
-                                    );
-                                statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "true");
-                            } else {
-                                statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "false");
-                            }
-                        } else {
-                            let leader_num_str = leader_num.to_string();
-                            statsd_time!(
-                                "transaction_received_by_leader",
-                                transaction_data.sent_at.elapsed(), "leader_num" => &leader_num_str, "api_key" => &api_key, "retry" => "false");
-                            return;
-                        }
-                    } else {
-                        // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
-                        statsd_count!("transaction_send_timeout", 1);
-                    }
-                }
-            });
-            leader_num += 1;
-        }
+        // let api_key = transaction_data
+        //     .request_metadata
+        //     .map(|m| m.api_key)
+        //     .unwrap_or("none".to_string());
+        // let mut leader_num = 0;
+        // for leader in self.leader_tracker.get_leaders() {
+        //     if leader.tpu_quic.is_none() {
+        //         error!("leader {:?} has no tpu_quic", leader);
+        //         continue;
+        //     }
+        //     let connection_cache = self.connection_cache.clone();
+        //     let wire_transaction = transaction_data.wire_transaction.clone();
+        //     let api_key = api_key.clone();
+        //     self.txn_sender_runtime.spawn(async move {
+        //         for i in 0..SEND_TXN_RETRIES {
+        //             let conn =
+        //                 connection_cache.get_nonblocking_connection(&leader.tpu_quic.unwrap());
+        //             if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA, conn.send_data(&wire_transaction)).await {
+        //                 if let Err(e) = result {
+        //                     if i == SEND_TXN_RETRIES - 1 {
+        //                         error!(
+        //                                 retry = "false",
+        //                                 "Failed to send transaction to {:?}: {}",
+        //                                 leader, e
+        //                             );
+        //                         statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "true");
+        //                     } else {
+        //                         statsd_count!("transaction_send_error", 1, "retry" => "false", "last_attempt" => "false");
+        //                     }
+        //                 } else {
+        //                     let leader_num_str = leader_num.to_string();
+        //                     statsd_time!(
+        //                         "transaction_received_by_leader",
+        //                         transaction_data.sent_at.elapsed(), "leader_num" => &leader_num_str, "api_key" => &api_key, "retry" => "false");
+        //                     return;
+        //                 }
+        //             } else {
+        //                 // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
+        //                 statsd_count!("transaction_send_timeout", 1);
+        //             }
+        //         }
+        //     });
+        //     leader_num += 1;
+        // }
     }
 }
 
