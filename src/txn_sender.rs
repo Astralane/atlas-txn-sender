@@ -82,7 +82,7 @@ impl TxnSenderImpl {
             max_retry_queue_size,
             friendly_rpcs,
         };
-        txn_sender.retry_transactions();
+        // txn_sender.retry_transactions();
         txn_sender
     }
 
@@ -104,10 +104,10 @@ impl TxnSenderImpl {
     }
 
     fn retry_transactions(&self) {
-        let leader_tracker = self.leader_tracker.clone();
+        // let leader_tracker = self.leader_tracker.clone();
         let transaction_store = self.transaction_store.clone();
-        let connection_cache = self.connection_cache.clone();
-        let txn_sender_runtime = self.txn_sender_runtime.clone();
+        // let connection_cache = self.connection_cache.clone();
+        // let txn_sender_runtime = self.txn_sender_runtime.clone();
         let txn_send_retry_interval_seconds = self.txn_send_retry_interval_seconds.clone();
         let max_retry_queue_size = self.max_retry_queue_size.clone();
         tokio::spawn(async move {
@@ -150,50 +150,50 @@ impl TxnSenderImpl {
                         transaction_data.retry_count += 1;
                     }
                 }
-                for wire_transaction in wire_transactions.iter() {
-                    let mut leader_num = 0;
-                    for leader in leader_tracker.get_leaders() {
-                        if leader.tpu_quic.is_none() {
-                            error!("leader {:?} has no tpu_quic", leader);
-                            continue;
-                        }
-                        let connection_cache = connection_cache.clone();
-                        let sent_at = Instant::now();
-                        let leader = Arc::new(leader.clone());
-                        let wire_transaction = wire_transaction.clone();
-                        txn_sender_runtime.spawn(async move {
-                            // retry unless its a timeout
-                            for i in 0..SEND_TXN_RETRIES {
-                                let conn = connection_cache
-                                    .get_nonblocking_connection(&leader.tpu_quic.unwrap());
-                                if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA_BATCH, conn.send_data(&wire_transaction)).await {
-                                    if let Err(e) = result {
-                                        if i == SEND_TXN_RETRIES - 1 {
-                                            error!(
-                                            retry = "true",
-                                            "Failed to send transaction batch to {:?}: {}",
-                                            leader, e
-                                        );
-                                            statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "true");
-                                        } else {
-                                            statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "false");
-                                        }
-                                    } else {
-                                        let leader_num_str = leader_num.to_string();
-                                        statsd_time!(
-                                        "transaction_received_by_leader",
-                                        sent_at.elapsed(), "leader_num" => &leader_num_str, "api_key" => "not_applicable", "retry" => "true");
-                                        return;
-                                    }
-                                } else {
-                                    // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
-                                    statsd_count!("transaction_send_timeout", 1);
-                                }
-                            }
-                        });
-                        leader_num += 1;
-                    }
-                }
+                // for wire_transaction in wire_transactions.iter() {
+                //     let mut leader_num = 0;
+                //     for leader in leader_tracker.get_leaders() {
+                //         if leader.tpu_quic.is_none() {
+                //             error!("leader {:?} has no tpu_quic", leader);
+                //             continue;
+                //         }
+                //         let connection_cache = connection_cache.clone();
+                //         let sent_at = Instant::now();
+                //         let leader = Arc::new(leader.clone());
+                //         let wire_transaction = wire_transaction.clone();
+                //         txn_sender_runtime.spawn(async move {
+                //             // retry unless its a timeout
+                //             for i in 0..SEND_TXN_RETRIES {
+                //                 let conn = connection_cache
+                //                     .get_nonblocking_connection(&leader.tpu_quic.unwrap());
+                //                 if let Ok(result) = timeout(MAX_TIMEOUT_SEND_DATA_BATCH, conn.send_data(&wire_transaction)).await {
+                //                     if let Err(e) = result {
+                //                         if i == SEND_TXN_RETRIES - 1 {
+                //                             error!(
+                //                             retry = "true",
+                //                             "Failed to send transaction batch to {:?}: {}",
+                //                             leader, e
+                //                         );
+                //                             statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "true");
+                //                         } else {
+                //                             statsd_count!("transaction_send_error", 1, "retry" => "true", "last_attempt" => "false");
+                //                         }
+                //                     } else {
+                //                         let leader_num_str = leader_num.to_string();
+                //                         statsd_time!(
+                //                         "transaction_received_by_leader",
+                //                         sent_at.elapsed(), "leader_num" => &leader_num_str, "api_key" => "not_applicable", "retry" => "true");
+                //                         return;
+                //                     }
+                //                 } else {
+                //                     // Note: This is far too frequent to log. It will fill the disks on the host and cost too much on DD.
+                //                     statsd_count!("transaction_send_timeout", 1);
+                //                 }
+                //             }
+                //         });
+                //         leader_num += 1;
+                //     }
+                // }
                 // remove transactions that reached max retries
                 for signature in transactions_reached_max_retries {
                     let _ = transaction_store.remove_transaction(signature);
@@ -309,7 +309,7 @@ pub fn compute_priority_details(transaction: &VersionedTransaction) -> PriorityD
 #[async_trait]
 impl TxnSender for TxnSenderImpl {
     fn send_transaction(&self, transaction_data: TransactionData) {
-        self.track_transaction(&transaction_data);
+        // self.track_transaction(&transaction_data);
         // Forward the transaction to friendly RPCs for redundancy
         self.forward_to_friendly_rpcs(&transaction_data.versioned_transaction);
         // let api_key = transaction_data

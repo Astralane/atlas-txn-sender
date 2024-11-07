@@ -136,8 +136,8 @@ async fn main() -> anyhow::Result<()> {
         leader_offset,
     ));
     let txn_send_retry_interval_seconds = env.txn_send_retry_interval.unwrap_or(2);
-    let leader_tracker_ = leader_tracker.clone();
-    let connection_cache_ = connection_cache.clone();
+    // let leader_tracker_ = leader_tracker.clone();
+    // let connection_cache_ = connection_cache.clone();
     let txn_sender = Arc::new(TxnSenderImpl::new(
         leader_tracker,
         transaction_store.clone(),
