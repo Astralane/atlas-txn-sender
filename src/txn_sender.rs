@@ -24,6 +24,7 @@ use crate::{
 use solana_program_runtime::compute_budget::DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT;
 use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
+use solana_sdk::commitment_config::CommitmentLevel;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_transaction_status::UiTransactionEncoding;
 
@@ -90,7 +91,7 @@ impl TxnSenderImpl {
         let friendly_rpc = self.friendly_rpcs.clone();
         for rpc in friendly_rpc.iter() {
             let rpc = rpc.clone();
-            let tx: Transaction = transaction.clone().into_legacy_transaction().expect("cannot convert to legacy");
+            let tx: Transaction = transaction.clone().into_legacy_transaction().expect("cannot convert ");
             self.txn_sender_runtime.spawn(async move {
                 statsd_count!("transaction_forwarded", 1);
                 info!("Forwarding transaction to friendly rpc: {}", rpc.url());
@@ -99,7 +100,7 @@ impl TxnSenderImpl {
                         &tx,
                         RpcSendTransactionConfig {
                             skip_preflight: true,
-                            preflight_commitment: None,
+                            preflight_commitment: Some(CommitmentLevel::Processed),
                             encoding: Some(UiTransactionEncoding::Base64),
                             max_retries: None,
                             min_context_slot: None,
