@@ -113,6 +113,9 @@ impl TxnSenderImpl {
                         rpc.url()
                     );
                 }
+                else{
+                    info!("Transaction forwarded to friendly rpc: {}", rpc.url());
+                }
             });
         }
     }
