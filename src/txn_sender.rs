@@ -4,7 +4,7 @@ use solana_client::{
     connection_cache::ConnectionCache, nonblocking::tpu_connection::TpuConnection,
 };
 use solana_program_runtime::compute_budget::{ComputeBudget, MAX_COMPUTE_UNIT_LIMIT};
-use solana_sdk::transaction::{self, VersionedTransaction};
+use solana_sdk::transaction::{self, Transaction, VersionedTransaction};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -90,7 +90,7 @@ impl TxnSenderImpl {
         let friendly_rpc = self.friendly_rpcs.clone();
         for rpc in friendly_rpc.iter() {
             let rpc = rpc.clone();
-            let tx = transaction.clone();
+            let tx: Transaction = transaction.clone().into_legacy_transaction().expect("cannot convert to legacy");
             self.txn_sender_runtime.spawn(async move {
                 statsd_count!("transaction_forwarded", 1);
                 info!("Forwarding transaction to friendly rpc: {}", rpc.url());
