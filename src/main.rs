@@ -146,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
         env.txn_sender_threads.unwrap_or(4),
         txn_send_retry_interval_seconds,
         env.max_retry_queue_size,
-        env.friendly_rpcs
+        env.friendly_rpcs,
     ));
 
     // spawn(async move {

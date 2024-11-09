@@ -1,4 +1,5 @@
 use cadence_macros::{statsd_count, statsd_gauge, statsd_time};
+use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_client::{
     connection_cache::ConnectionCache, nonblocking::tpu_connection::TpuConnection,
 };
@@ -8,7 +9,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use solana_client::nonblocking::rpc_client::RpcClient;
 use tokio::{
     runtime::{Builder, Runtime},
     time::{error::Elapsed, sleep, timeout},
@@ -22,8 +22,10 @@ use crate::{
     transaction_store::{get_signature, TransactionData, TransactionStore},
 };
 use solana_program_runtime::compute_budget::DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT;
+use solana_rpc_client_api::config::RpcSendTransactionConfig;
 use solana_sdk::borsh0_10::try_from_slice_unchecked;
 use solana_sdk::compute_budget::ComputeBudgetInstruction;
+use solana_transaction_status::UiTransactionEncoding;
 
 const RETRY_COUNT_BINS: [i32; 6] = [0, 1, 2, 5, 10, 25];
 const MAX_RETRIES_BINS: [i32; 5] = [0, 1, 5, 10, 30];
@@ -67,9 +69,7 @@ impl TxnSenderImpl {
         let friendly_rpcs = friendly_rpc_urls
             .unwrap_or_default()
             .iter()
-            .map(|url| {
-                Arc::new(RpcClient::new(url.clone()))
-            })
+            .map(|url| Arc::new(RpcClient::new(url.clone())))
             .collect();
 
         let txn_sender = Self {
@@ -94,10 +94,24 @@ impl TxnSenderImpl {
             self.txn_sender_runtime.spawn(async move {
                 statsd_count!("transaction_forwarded", 1);
                 info!("Forwarding transaction to friendly rpc: {}", rpc.url());
-                let res = rpc.send_transaction(&tx).await;
+                let res = rpc
+                    .send_transaction_with_config(
+                        &tx,
+                        RpcSendTransactionConfig {
+                            skip_preflight: true,
+                            preflight_commitment: None,
+                            encoding: Some(UiTransactionEncoding::Base64),
+                            max_retries: None,
+                            min_context_slot: None,
+                        },
+                    )
+                    .await;
                 if let Err(e) = res {
-                    error!("Failed to send transaction to friendly rpc: {} for url {}",
-                        e, rpc.url());
+                    error!(
+                        "Failed to send transaction to friendly rpc: {} for url {}",
+                        e,
+                        rpc.url()
+                    );
                 }
             });
         }
